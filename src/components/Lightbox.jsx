@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ChevronLeft, ChevronRight, Heart, Calendar, Tag, Sparkles } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Heart, Calendar, Tag, Sparkles, Download } from 'lucide-react';
 import { FALLBACK_IMAGE } from '../data/photos';
 
 export default function Lightbox({ 
@@ -11,6 +11,7 @@ export default function Lightbox({
   onNext, 
   isFavorite, 
   onToggleFavorite,
+  onDownload,
   currentIndex,
   totalCount
 }) {
@@ -78,6 +79,15 @@ export default function Lightbox({
               size={20}
               className={isFavorite ? "fill-lavender-dark text-lavender-dark" : "text-white"}
             />
+          </button>
+
+          <button
+            onClick={() => onDownload(photo)}
+            className="p-3 rounded-full bg-white/15 hover:bg-white/25 text-white backdrop-blur-md transition-all hover:scale-105 shadow-md"
+            title="Download photo"
+            aria-label={`Download ${photo.title}`}
+          >
+            <Download size={19} />
           </button>
 
           {/* Close button */}

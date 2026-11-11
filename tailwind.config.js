@@ -8,25 +8,22 @@ export default {
   theme: {
     extend: {
       colors: {
-        'deep-purple': '#211B38',
-        'deep-purple-dark': '#151025',
-        'deep-purple-light': '#2f2750',
+        'deep-purple': '#654454',
+        'deep-purple-dark': '#493440',
+        'deep-purple-light': '#FFF8F2',
         'lavender': {
-          DEFAULT: '#B9A0D9',
-          light: '#D9C8ED',
-          dark: '#9373BE',
-          soft: '#E8DFF5',
+          DEFAULT: '#E8B4C8',
+          light: '#FFDDE8',
+          dark: '#A65F7C',
+          soft: '#FFF0F5',
         },
         'soft-pink': {
-          DEFAULT: '#F4DCEB',
-          light: '#FBF0F6',
-          dark: '#E2B8D4',
+          DEFAULT: '#FFF0F5',
+          light: '#FFF8F2',
+          dark: '#E8B4C8',
         },
-        'cream': {
-          DEFAULT: '#FFF8F0',
-          dark: '#F5ECE1',
-        },
-        'gold-sparkle': '#FCD34D',
+        'cream': { DEFAULT: '#FFF8F2', dark: '#FFF0F5' },
+        'gold-sparkle': '#E8B4C8',
       },
       fontFamily: {
         sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
@@ -35,10 +32,10 @@ export default {
         script: ['"Sacramento"', 'cursive'],
       },
       boxShadow: {
-        'dreamy': '0 10px 30px -10px rgba(185, 160, 217, 0.35)',
-        'dreamy-glow': '0 0 25px rgba(185, 160, 217, 0.45)',
-        'dreamy-purple': '0 15px 35px -5px rgba(33, 27, 56, 0.5)',
-        'polaroid': '0 12px 28px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.08)',
+        'dreamy': '0 10px 30px -10px rgba(166, 95, 124, 0.22)',
+        'dreamy-glow': '0 0 25px rgba(232, 180, 200, 0.4)',
+        'dreamy-purple': '0 15px 35px -5px rgba(101, 68, 84, 0.25)',
+        'polaroid': '0 12px 28px rgba(101, 68, 84, 0.12), 0 2px 4px rgba(101, 68, 84, 0.08)',
       },
       animation: {
         'float-slow': 'float 6s ease-in-out infinite',

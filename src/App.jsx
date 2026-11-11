@@ -1,174 +1,109 @@
-import React, { lazy, Suspense, useState, useEffect } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import Gallery from './components/Gallery';
 import PhotoBooth from './components/PhotoBooth';
 import Timeline from './components/Timeline';
 import FlipCards from './components/FlipCards';
-import DailyFortune from './components/DailyFortune';
 import SecretLetter from './components/SecretLetter';
+import MusicCorner from './components/MusicCorner';
 import Footer from './components/Footer';
-import HeartCursor from './components/HeartCursor';
 import FavoritesModal from './components/FavoritesModal';
-import LoadingScreen from './components/LoadingScreen';
+import GiftIntro from './components/GiftIntro';
 
 const Arcade = lazy(() => import('./components/Arcade'));
+const PAGE_PATHS = {
+  home: '/',
+  gallery: '/gallery',
+  photobooth: '/photo-booth',
+  arcade: '/arcade',
+  music: '/music',
+  surprise: '/surprise',
+};
+
+function pageFromPath() {
+  return Object.entries(PAGE_PATHS).find(([, path]) => path === window.location.pathname)?.[0] || 'home';
+}
+
+function hasSeenIntro() {
+  try {
+    return localStorage.getItem('jungkook_gift_intro_seen') === 'true';
+  } catch (error) {
+    console.error('Unable to read intro preference.', error);
+    return false;
+  }
+}
 
 export default function App() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [page, setPage] = useState(() => {
-    if (window.location.pathname === '/gallery') return 'gallery';
-    if (window.location.pathname === '/photo-booth') return 'photobooth';
-    if (window.location.pathname === '/arcade') return 'arcade';
-    return 'home';
-  });
-  const [activeSection, setActiveSection] = useState(() => page);
+  const [page, setPage] = useState(pageFromPath);
+  const [showGiftIntro, setShowGiftIntro] = useState(() => !hasSeenIntro());
   const [favorites, setFavorites] = useState([]);
   const [isFavoritesOpen, setIsFavoritesOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
 
-  // Load saved preferences from localStorage
+  const finishGiftIntro = useCallback(() => {
+    try {
+      localStorage.setItem('jungkook_gift_intro_seen', 'true');
+    } catch (error) {
+      console.error('Unable to save intro preference.', error);
+    }
+    setShowGiftIntro(false);
+  }, []);
+
   useEffect(() => {
     const handlePopState = () => {
-      const currentPage = window.location.pathname === '/gallery'
-        ? 'gallery'
-        : window.location.pathname === '/photo-booth'
-          ? 'photobooth'
-          : window.location.pathname === '/arcade'
-            ? 'arcade'
-          : 'home';
-      setPage(currentPage);
-      setActiveSection(currentPage === 'home' ? 'home' : currentPage);
+      setPage(pageFromPath());
       window.scrollTo(0, 0);
     };
-
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   useEffect(() => {
     try {
-      const savedFavs = localStorage.getItem('jungkook_favorites');
-      if (savedFavs) {
-        setFavorites(JSON.parse(savedFavs));
-      } else {
-        // Pre-favorite a couple iconic ones as a lovely default
-        setFavorites(['jk-1', 'jk-5', 'jk-6']);
-      }
-
-      const savedTheme = localStorage.getItem('jungkook_theme');
-      if (savedTheme === 'dark') {
-        setDarkMode(true);
-      }
-    } catch (e) {
-      console.error(e);
+      const savedFavorites = localStorage.getItem('jungkook_favorites');
+      setFavorites(savedFavorites ? JSON.parse(savedFavorites) : []);
+      setDarkMode(localStorage.getItem('jungkook_theme') === 'dark');
+    } catch (error) {
+      console.error('Unable to load scrapbook preferences.', error);
     }
-
-    // Dismiss loading screen after gentle delay
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 1200);
-
-    return () => clearTimeout(timer);
   }, []);
 
-  // Update HTML dark class
   useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('jungkook_theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('jungkook_theme', 'light');
+    document.documentElement.classList.toggle('dark', darkMode);
+    try {
+      localStorage.setItem('jungkook_theme', darkMode ? 'dark' : 'light');
+    } catch (error) {
+      console.error('Unable to save theme preference.', error);
     }
   }, [darkMode]);
 
-  // Track active section on scroll
-  useEffect(() => {
-    const handleScroll = () => {
-      if (page !== 'home') return;
-      const sections = ['home', 'timeline', 'little-things', 'daily-fortune', 'surprise'];
-      const scrollY = window.scrollY;
+  const navigate = useCallback((destination) => {
+    const nextPage = PAGE_PATHS[destination] ? destination : 'home';
+    const path = PAGE_PATHS[nextPage];
+    if (window.location.pathname !== path) window.history.pushState({}, '', path);
+    setPage(nextPage);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
-      for (const sectionId of sections) {
-        const el = document.getElementById(sectionId);
-        if (el) {
-          const top = el.offsetTop - 120;
-          const height = el.offsetHeight;
-          if (scrollY >= top && scrollY < top + height) {
-            setActiveSection(sectionId);
-            break;
-          }
-        }
-      }
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [page]);
-
-  // Toggle favorite photo
-  const handleToggleFavorite = (photoId) => {
-    setFavorites((prev) => {
-      let updated;
-      if (prev.includes(photoId)) {
-        updated = prev.filter((id) => id !== photoId);
-      } else {
-        updated = [...prev, photoId];
-      }
+  const toggleFavorite = (photoId) => {
+    setFavorites((current) => {
+      const updated = current.includes(photoId)
+        ? current.filter((id) => id !== photoId)
+        : [...current, photoId];
       try {
         localStorage.setItem('jungkook_favorites', JSON.stringify(updated));
-      } catch (err) {}
+      } catch (error) {
+        console.error('Unable to save favorite photos.', error);
+      }
       return updated;
     });
   };
 
-  // Navigation scroll helper
-  const navigate = (id) => {
-    if (id === 'gallery' || id === 'photobooth' || id === 'arcade') {
-      const path = id === 'gallery' ? '/gallery' : id === 'photobooth' ? '/photo-booth' : '/arcade';
-      if (window.location.pathname !== path) {
-        window.history.pushState({}, '', path);
-      }
-      setPage(id);
-      setActiveSection(id);
-      window.scrollTo(0, 0);
-      return;
-    }
-
-    if (window.location.pathname !== '/') {
-      window.history.pushState({}, '', '/');
-    }
-    setPage('home');
-    setActiveSection(id);
-
-    if (id === 'home') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
-    }
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-      });
-    });
-  };
-
-  const scrollToTop = () => {
-    navigate('home');
-  };
-
   return (
-    <div className="min-h-screen relative overflow-x-hidden transition-colors duration-500">
-      {/* Initial Romantic Loading Screen */}
-      <LoadingScreen isLoaded={!isLoading} />
-
-      {/* Desktop Heart Follower & Click Sparkles */}
-      <HeartCursor />
-
-      {/* Sticky Glassmorphic Navbar */}
+    <div className="app-shell">
       <Navbar
-        activeSection={activeSection}
+        activeSection={page}
         onNavigate={navigate}
         favoritesCount={favorites.length}
         onOpenFavorites={() => setIsFavoritesOpen(true)}
@@ -176,42 +111,46 @@ export default function App() {
         setDarkMode={setDarkMode}
       />
 
-      <main>
+      <main className="app-main">
         {page === 'gallery' ? (
-          <Gallery
-            favorites={favorites}
-            onToggleFavorite={handleToggleFavorite}
-          />
+          <Gallery favorites={favorites} onToggleFavorite={toggleFavorite} />
         ) : page === 'photobooth' ? (
           <PhotoBooth />
         ) : page === 'arcade' ? (
-          <Suspense fallback={<div className="arcade-page text-center text-lavender-dark">Opening JK Arcade ♡</div>}>
+          <Suspense fallback={<div className="arcade-page text-center">Opening JK Arcade ♡</div>}>
             <Arcade onBack={() => navigate('home')} />
           </Suspense>
+        ) : page === 'music' ? (
+          <MusicCorner />
+        ) : page === 'surprise' ? (
+          <SecretLetter />
         ) : (
           <>
-            <Hero onEnter={() => navigate('gallery')} />
-            <Timeline />
-            <FlipCards />
-            <DailyFortune />
-            <SecretLetter />
+            <Hero
+              onEnter={() => navigate('gallery')}
+              onArcade={() => navigate('arcade')}
+              onMusic={() => navigate('music')}
+              onPhotoBooth={() => navigate('photobooth')}
+            />
+            <div className="home-extras">
+              <Timeline />
+              <FlipCards />
+            </div>
           </>
         )}
       </main>
 
-      {/* Footer with quotes and back-to-top */}
-      <Footer onScrollTop={scrollToTop} />
+      <Footer onScrollTop={() => navigate('home')} />
 
-      {/* Favorites Modal */}
       <FavoritesModal
         isOpen={isFavoritesOpen}
         onClose={() => setIsFavoritesOpen(false)}
         favorites={favorites}
-        onToggleFavorite={handleToggleFavorite}
-        onSelectPhoto={() => {
-          navigate('gallery');
-        }}
+        onToggleFavorite={toggleFavorite}
+        onSelectPhoto={() => navigate('gallery')}
       />
+
+      {showGiftIntro && <GiftIntro onFinish={finishGiftIntro} />}
     </div>
   );
 }

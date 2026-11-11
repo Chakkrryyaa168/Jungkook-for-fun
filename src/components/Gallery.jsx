@@ -1,237 +1,255 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Heart, 
-  Sparkles, 
-  Camera, 
-  Flame, 
-  Crown, 
-  Coffee, 
-  Maximize2,
-  Tag
-} from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Archive, Check, Download, Heart, Images, Sparkles } from 'lucide-react';
 import { categories, photos, FALLBACK_IMAGE } from '../data/photos';
 import Lightbox from './Lightbox';
 
-// Icon mapper for categories
 const iconMap = {
   Sparkles,
-  Coffee,
-  Camera,
-  Flame,
-  Crown,
+  Coffee: Sparkles,
+  Camera: Images,
+  Flame: Sparkles,
+  Crown: Sparkles,
   Heart,
 };
+
+function safeFilename(value) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'jungkook-photo';
+}
+
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+}
+
+async function fetchPhoto(photo) {
+  const response = await fetch(photo.url);
+  if (!response.ok) throw new Error(`Could not download “${photo.title}” (${response.status}).`);
+  return response.blob();
+}
 
 export default function Gallery({ favorites, onToggleFavorite }) {
   const [activeCategory, setActiveCategory] = useState('all');
   const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [selectedForDownload, setSelectedForDownload] = useState([]);
   const [imageLoadedState, setImageLoadedState] = useState({});
+  const [downloadMessage, setDownloadMessage] = useState('');
+  const [isDownloading, setIsDownloading] = useState(false);
 
-  const filteredPhotos = activeCategory === 'all'
-    ? photos
-    : photos.filter((p) => p.category === activeCategory);
+  const filteredPhotos = useMemo(() => (
+    activeCategory === 'all' ? photos : photos.filter((photo) => photo.category === activeCategory)
+  ), [activeCategory]);
 
   const currentPhotoIndex = selectedPhoto
-    ? filteredPhotos.findIndex((p) => p.id === selectedPhoto.id)
+    ? filteredPhotos.findIndex((photo) => photo.id === selectedPhoto.id)
     : -1;
 
-  const handlePrev = () => {
-    if (currentPhotoIndex > 0) {
-      setSelectedPhoto(filteredPhotos[currentPhotoIndex - 1]);
-    } else {
-      setSelectedPhoto(filteredPhotos[filteredPhotos.length - 1]);
+  const downloadOne = async (photo) => {
+    setIsDownloading(true);
+    setDownloadMessage('');
+    try {
+      const blob = await fetchPhoto(photo);
+      const extension = blob.type.includes('png') ? 'png' : 'jpg';
+      saveBlob(blob, `${safeFilename(photo.title)}.${extension}`);
+      setDownloadMessage(`Saved “${photo.title}” to your downloads.`);
+    } catch (error) {
+      console.error('Gallery photo download failed.', error);
+      setDownloadMessage(`${error.message} Open the source link to download it directly.`);
+    } finally {
+      setIsDownloading(false);
     }
   };
 
-  const handleNext = () => {
-    if (currentPhotoIndex < filteredPhotos.length - 1) {
-      setSelectedPhoto(filteredPhotos[currentPhotoIndex + 1]);
-    } else {
-      setSelectedPhoto(filteredPhotos[0]);
+  const downloadZip = async (items) => {
+    if (!items.length || isDownloading) return;
+    setIsDownloading(true);
+    setDownloadMessage('');
+    try {
+      const { default: JSZip } = await import('jszip');
+      const zip = new JSZip();
+      const results = await Promise.all(items.map(async (photo) => ({
+        photo,
+        blob: await fetchPhoto(photo),
+      })));
+      results.forEach(({ photo, blob }) => {
+        const extension = blob.type.includes('png') ? 'png' : 'jpg';
+        zip.file(`${safeFilename(photo.title)}.${extension}`, blob);
+      });
+      zip.file('ATTRIBUTION.txt', results.map(({ photo }) => (
+        `${photo.title}\nCreator: ${photo.creator}\nLicense: ${photo.license}\nSource: ${photo.sourceUrl}\n`
+      )).join('\n'));
+      const archive = await zip.generateAsync({ type: 'blob' });
+      saveBlob(archive, 'jungkook-zip-gallery.zip');
+      setDownloadMessage(`Saved ${results.length} photos in jungkook-zip-gallery.zip.`);
+    } catch (error) {
+      console.error('Gallery ZIP download failed.', error);
+      setDownloadMessage(`${error.message} Try downloading photos one at a time.`);
+    } finally {
+      setIsDownloading(false);
     }
   };
 
-  const handleImageLoaded = (id) => {
-    setImageLoadedState((prev) => ({ ...prev, [id]: true }));
+  const toggleSelected = (photoId) => {
+    setSelectedForDownload((current) => current.includes(photoId)
+      ? current.filter((id) => id !== photoId)
+      : [...current, photoId]);
+  };
+
+  const movePhoto = (direction) => {
+    if (currentPhotoIndex < 0 || !filteredPhotos.length) return;
+    const nextIndex = (currentPhotoIndex + direction + filteredPhotos.length) % filteredPhotos.length;
+    setSelectedPhoto(filteredPhotos[nextIndex]);
   };
 
   return (
-    <section id="gallery" className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto relative">
-      {/* Section Header */}
-      <div className="text-center max-w-2xl mx-auto mb-12">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full glass-pill text-xs font-semibold uppercase tracking-wider text-lavender-dark dark:text-lavender mb-3">
-          <Sparkles size={13} />
-          <span>Photo Memories Gallery</span>
-        </div>
-        <h2 className="text-3xl sm:text-4xl md:text-5xl font-serif font-bold text-deep-purple dark:text-cream tracking-tight mb-3">
-          Moments Frozen in Time.
-        </h2>
-        <p className="text-sm sm:text-base text-deep-purple/75 dark:text-cream/80 font-normal leading-relaxed">
-          From electric concert stages to cozy airport mornings, explore every side of Jungkook. 
-          Tap any picture to view full-screen, read cute captions, and save your favorites!
-        </p>
-      </div>
+    <section className="gallery-page">
+      <header className="page-heading gallery-heading">
+        <span className="eyebrow-pill"><Images size={14} /> little moments, kept forever</span>
+        <h1>The JK <em>Photo Album</em></h1>
+        <p>A polaroid-sized collection of the moments that make us smile.</p>
+        <div className="gallery-count">{photos.length} lovely little moments <span>♡</span></div>
+      </header>
 
-      {/* Category Filter Pills */}
-      <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 mb-10">
-        {categories.map((cat) => {
-          const Icon = iconMap[cat.icon] || Sparkles;
-          const isActive = activeCategory === cat.id;
-          const count = cat.id === 'all' 
-            ? photos.length 
-            : photos.filter((p) => p.category === cat.id).length;
-
+      <div className="gallery-filters" aria-label="Filter photos by category">
+        {categories.map((category) => {
+          const Icon = iconMap[category.icon] || Sparkles;
+          const count = category.id === 'all' ? photos.length : photos.filter((photo) => photo.category === category.id).length;
           return (
             <button
-              key={cat.id}
-              onClick={() => setActiveCategory(cat.id)}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs sm:text-sm font-medium transition-all duration-300 shadow-sm ${
-                isActive
-                  ? 'bg-lavender text-white shadow-dreamy scale-105'
-                  : 'glass-pill text-deep-purple/80 dark:text-cream/80 hover:bg-lavender/20'
-              }`}
+              type="button"
+              key={category.id}
+              onClick={() => setActiveCategory(category.id)}
+              className={`gallery-filter ${activeCategory === category.id ? 'active' : ''}`}
             >
-              <Icon size={14} className={isActive ? "text-white" : "text-lavender"} />
-              <span>{cat.label}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                isActive ? 'bg-white/20 text-white' : 'bg-lavender/20 text-deep-purple dark:text-cream'
-              }`}>
-                {count}
-              </span>
+              <Icon size={14} />
+              {category.label}
+              <span>{count}</span>
             </button>
           );
         })}
       </div>
 
-      {/* Masonry / Pinterest Style Grid Layout */}
-      <motion.div 
-        layout
-        className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-6 space-y-6"
-      >
-        <AnimatePresence>
-          {filteredPhotos.map((photo, index) => {
-            const isFav = favorites.includes(photo.id);
-            const isLoaded = imageLoadedState[photo.id];
+      <div className="gallery-download-bar">
+        <span>{selectedForDownload.length ? `${selectedForDownload.length} selected` : 'Save your favorites to your device'}</span>
+        <div className="gallery-download-actions">
+          {selectedForDownload.length > 0 && (
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => downloadZip(photos.filter((photo) => selectedForDownload.includes(photo.id)))}
+              disabled={isDownloading}
+            >
+              <Archive size={15} /> Download selected
+            </button>
+          )}
+          <button type="button" className="button-secondary" onClick={() => downloadZip(photos)} disabled={isDownloading}>
+            <Archive size={15} /> Download all as ZIP
+          </button>
+        </div>
+      </div>
+      {downloadMessage && <p className="gallery-download-message" role="status">{downloadMessage}</p>}
 
+      <motion.div layout className="gallery-grid">
+        <AnimatePresence mode="popLayout">
+          {filteredPhotos.map((photo, index) => {
+            const isFavorite = favorites.includes(photo.id);
+            const isSelected = selectedForDownload.includes(photo.id);
+            const isLoaded = imageLoadedState[photo.id];
             return (
-              <motion.div
+              <motion.article
                 key={photo.id}
                 layout
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.4, delay: index * 0.04 }}
-                className="break-inside-avoid group relative"
+                initial={{ opacity: 0, y: 16, rotate: -1 }}
+                animate={{ opacity: 1, y: 0, rotate: index % 2 ? 1 : -1 }}
+                exit={{ opacity: 0, scale: .94 }}
+                transition={{ duration: .32, delay: Math.min(index * .025, .25) }}
+                className={`polaroid-card ${isSelected ? 'selected' : ''}`}
               >
-                {/* Polaroid / Dreamy Scrapbook Card Frame */}
-                <div 
-                  onClick={() => setSelectedPhoto(photo)}
-                  className="cursor-pointer bg-white dark:bg-deep-purple-light p-3 pb-4 rounded-2xl shadow-polaroid border border-white/80 dark:border-lavender/20 hover:shadow-dreamy transition-all duration-500 hover:-translate-y-1.5 hover:rotate-[-0.5deg]"
-                >
-                  {/* Image Container with Shimmer Skeleton */}
-                  <div className={`relative overflow-hidden rounded-xl ${photo.aspect} bg-lavender/10`}>
-                    {!isLoaded && (
-                      <div className="absolute inset-0 bg-gradient-to-r from-lavender/10 via-soft-pink/20 to-lavender/10 animate-pulse" />
-                    )}
-
-                    <img
-                      src={photo.url}
-                      alt={photo.title}
-                      loading="lazy"
-                      onLoad={() => handleImageLoaded(photo.id)}
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.src = FALLBACK_IMAGE;
-                        handleImageLoaded(photo.id);
-                      }}
-                      className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-108 ${
-                        isLoaded ? 'opacity-100' : 'opacity-0'
-                      }`}
-                    />
-
-                    {/* Gradient Overlay for hover */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-deep-purple/80 via-deep-purple/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-between p-4 text-white">
-                      {/* Top actions on hover */}
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] uppercase font-mono tracking-wider bg-white/20 backdrop-blur-md px-2.5 py-1 rounded-full">
-                          {photo.categoryLabel}
-                        </span>
-                        <div className="p-1.5 rounded-full bg-white/20 backdrop-blur-md">
-                          <Maximize2 size={13} />
-                        </div>
-                      </div>
-
-                      {/* Bottom note on hover */}
-                      <div>
-                        <p className="font-serif font-bold text-sm leading-tight text-white drop-shadow-md">
-                          {photo.title}
-                        </p>
-                        {photo.note && (
-                          <p className="font-handwriting text-sm text-soft-pink mt-0.5 line-clamp-1">
-                            "{photo.note}"
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Card Bottom: Title & Favorite Button */}
-                  <div className="mt-3 px-1 flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-serif font-semibold text-sm text-deep-purple dark:text-cream truncate">
-                        {photo.title}
-                      </h4>
-                      <p className="text-[11px] text-lavender-dark dark:text-lavender-light truncate font-sans">
-                        {photo.date} · {photo.subtitle}
-                      </p>
-                    </div>
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleFavorite(photo.id);
-                      }}
-                      className={`p-2 rounded-full transition-all duration-300 ${
-                        isFav
-                          ? 'bg-soft-pink text-deep-purple scale-110 shadow-sm'
-                          : 'text-deep-purple/40 dark:text-cream/40 hover:text-lavender hover:bg-lavender/10'
-                      }`}
-                      title={isFav ? "Favorited" : "Save to favorites"}
-                    >
-                      <Heart
-                        size={15}
-                        className={isFav ? "fill-lavender-dark text-lavender-dark" : ""}
-                      />
-                    </button>
-                  </div>
-
-                  {/* Cute Handwritten tape caption if cute moment or golden */}
-                  {photo.category === 'cute' && (
-                    <div className="mt-2 pt-2 border-t border-lavender/15 flex items-center gap-1.5">
-                      <span className="text-xs">🐰</span>
-                      <span className="font-handwriting text-sm text-lavender-dark dark:text-lavender">
-                        "the bunny smile we adore"
-                      </span>
-                    </div>
-                  )}
+                <div className={`polaroid-image ${photo.aspect}`}>
+                  {!isLoaded && <div className="image-shimmer" />}
+                  <img
+                    src={photo.url}
+                    alt={photo.title}
+                    loading="lazy"
+                    onLoad={() => setImageLoadedState((state) => ({ ...state, [photo.id]: true }))}
+                    onError={(event) => {
+                      event.currentTarget.onerror = null;
+                      event.currentTarget.src = FALLBACK_IMAGE;
+                      setImageLoadedState((state) => ({ ...state, [photo.id]: true }));
+                    }}
+                    onClick={() => setSelectedPhoto(photo)}
+                    className={isLoaded ? 'loaded' : ''}
+                  />
+                  <button
+                    type="button"
+                    className={`photo-select-button ${isSelected ? 'selected' : ''}`}
+                    onClick={() => toggleSelected(photo.id)}
+                    aria-label={`${isSelected ? 'Deselect' : 'Select'} ${photo.title} for download`}
+                  >
+                    {isSelected && <Check size={14} />}
+                  </button>
+                  <button
+                    type="button"
+                    className={`photo-heart-button ${isFavorite ? 'favorited' : ''}`}
+                    onClick={() => onToggleFavorite(photo.id)}
+                    aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                  >
+                    <Heart size={17} fill={isFavorite ? 'currentColor' : 'none'} />
+                  </button>
+                  <button
+                    type="button"
+                    className="photo-open-button"
+                    onClick={() => setSelectedPhoto(photo)}
+                    aria-label={`View ${photo.title}`}
+                  >
+                    View photo
+                  </button>
+                  <button
+                    type="button"
+                    className="photo-download-button"
+                    disabled={isDownloading}
+                    onClick={() => downloadOne(photo)}
+                    aria-label={`Download ${photo.title}`}
+                  >
+                    <Download size={15} />
+                  </button>
                 </div>
-              </motion.div>
+                <div className="polaroid-caption">
+                  <span className="photo-category-tag">{photo.categoryLabel}</span>
+                  <h2 onClick={() => setSelectedPhoto(photo)}>{photo.title}</h2>
+                  <p>{photo.date} <span>·</span> {photo.subtitle}</p>
+                  {photo.note && <blockquote>“{photo.note}”</blockquote>}
+                  <a className="photo-attribution" href={photo.sourceUrl} target="_blank" rel="noreferrer">
+                    Photo: {photo.creator} · {photo.license} · source ↗
+                  </a>
+                </div>
+              </motion.article>
             );
           })}
         </AnimatePresence>
       </motion.div>
 
-      {/* Full-screen Lightbox */}
+      <p className="gallery-license-note">
+        Images are from Wikimedia Commons and are shared under the listed terms. Please follow each source page’s attribution requirements when reusing them.
+      </p>
+
       <Lightbox
         photo={selectedPhoto}
-        isOpen={!!selectedPhoto}
+        isOpen={Boolean(selectedPhoto)}
         onClose={() => setSelectedPhoto(null)}
-        onPrev={handlePrev}
-        onNext={handleNext}
+        onPrev={() => movePhoto(-1)}
+        onNext={() => movePhoto(1)}
         isFavorite={selectedPhoto ? favorites.includes(selectedPhoto.id) : false}
-        onToggleFavorite={onToggleFavorite}
-        currentIndex={currentPhotoIndex}
+        onToggleFavorite={(photoId) => onToggleFavorite(photoId)}
+        onDownload={downloadOne}
+        currentIndex={Math.max(currentPhotoIndex, 0)}
         totalCount={filteredPhotos.length}
       />
     </section>

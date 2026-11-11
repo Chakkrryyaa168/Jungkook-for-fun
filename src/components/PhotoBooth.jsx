@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Camera, Download, ImagePlus, RefreshCw, Palette } from 'lucide-react';
+import { Camera, Download, ImagePlus, RefreshCw, Palette, Smartphone, Monitor } from 'lucide-react';
 import { photos, FALLBACK_IMAGE } from '../data/photos';
 
 const STORAGE_KEY = 'jungkook_photo_booth';
@@ -8,11 +8,21 @@ const DATABASE_NAME = 'jungkook-scrapbook';
 const DATABASE_STORE = 'photo-booth';
 
 const STRIP_THEMES = [
-  { id: 'lavender', name: 'Lavender Dream', bg: 'bg-[#B9A0D9]', text: 'text-[#211B38]' },
-  { id: 'deep-purple', name: 'Midnight Purple', bg: 'bg-[#211B38]', text: 'text-[#FFF8F0]' },
-  { id: 'soft-pink', name: 'Strawberry Milk', bg: 'bg-[#F4DCEB]', text: 'text-[#211B38]' },
-  { id: 'classic-white', name: 'Classic Polaroid', bg: 'bg-white', text: 'text-neutral-800' },
+  { id: 'lavender', name: 'Baby Pink', bg: 'bg-[#FFDDE8]', text: 'text-[#654454]', exportBackground: '#FFDDE8', exportText: '#654454' },
+  { id: 'deep-purple', name: 'Rose Pink', bg: 'bg-[#E8B4C8]', text: 'text-[#654454]', exportBackground: '#E8B4C8', exportText: '#654454' },
+  { id: 'soft-pink', name: 'Blush', bg: 'bg-[#FFF0F5]', text: 'text-[#654454]', exportBackground: '#FFF0F5', exportText: '#654454' },
+  { id: 'classic-white', name: 'Classic Cream', bg: 'bg-white', text: 'text-[#654454]', exportBackground: '#FFFFFF', exportText: '#654454' },
 ];
+
+const defaultStripPhotos = () => {
+  const downloadablePhotos = photos.filter((photo) => (
+    photo.url.startsWith('https://upload.wikimedia.org/')
+    || photo.url.startsWith('https://thumb.wikimedia.org/')
+  )).slice(0, 4);
+  return downloadablePhotos.length === 4
+    ? downloadablePhotos
+    : [photos[0], photos[4], photos[5], photos[1]];
+};
 
 function getSavedPhotoBooth() {
   try {
@@ -22,7 +32,7 @@ function getSavedPhotoBooth() {
     return {
       selectedPhotos: Array.isArray(saved.selectedPhotos) && saved.selectedPhotos.length === 4
         ? saved.selectedPhotos
-        : [photos[0], photos[4], photos[5], photos[1]],
+        : defaultStripPhotos(),
       activeTheme: STRIP_THEMES.find((theme) => theme.id === saved.activeTheme) || STRIP_THEMES[0],
       customText: typeof saved.customText === 'string' ? saved.customText : 'jungkook.zip ♡ 2026',
     };
@@ -145,13 +155,9 @@ async function createStripImage(selectedPhotos, themeId, caption) {
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Your browser could not create the photo strip image.');
 
-  const background = {
-    lavender: '#B9A0D9',
-    'deep-purple': '#211B38',
-    'soft-pink': '#F4DCEB',
-    'classic-white': '#FFFFFF',
-  }[themeId] || '#B9A0D9';
-  const textColor = themeId === 'deep-purple' ? '#FFF8F0' : '#211B38';
+  const theme = STRIP_THEMES.find((item) => item.id === themeId) || STRIP_THEMES[0];
+  const background = theme.exportBackground;
+  const textColor = theme.exportText;
   context.fillStyle = background;
   context.fillRect(0, 0, width, height);
   context.fillStyle = textColor;
@@ -198,14 +204,13 @@ async function createStripImage(selectedPhotos, themeId, caption) {
 
 export default function PhotoBooth() {
   const [savedSettings] = useState(getSavedPhotoBooth);
-  const [selectedPhotos, setSelectedPhotos] = useState(
-    savedSettings?.selectedPhotos || [photos[0], photos[4], photos[5], photos[1]]
-  );
+  const [selectedPhotos, setSelectedPhotos] = useState(savedSettings?.selectedPhotos || defaultStripPhotos);
   const [activeTheme, setActiveTheme] = useState(savedSettings?.activeTheme || STRIP_THEMES[0]);
   const [customText, setCustomText] = useState(savedSettings?.customText || 'jungkook.zip ♡ 2026');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [storageReady, setStorageReady] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -303,15 +308,55 @@ export default function PhotoBooth() {
   };
 
   const handleSaveImage = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
     setNotice('Preparing your photo strip…');
     setError('');
     try {
+      const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+      const fileHandlePromise = !isTouchDevice && 'showSaveFilePicker' in window
+        ? window.showSaveFilePicker({
+          suggestedName: 'jungkook-photo-strip.png',
+          types: [{ description: 'PNG image', accept: { 'image/png': ['.png'] } }],
+        }).catch((pickerError) => {
+          if (pickerError.name === 'AbortError') return { canceled: true };
+          console.error('Unable to open the save-file dialog.', pickerError);
+          return null;
+        })
+        : null;
       const blob = await createStripImage(selectedPhotos, activeTheme.id, customText);
       const file = new File([blob], 'jungkook-photo-strip.png', { type: 'image/png' });
-      if (navigator.canShare?.({ files: [file] }) && navigator.share) {
-        await navigator.share({ files: [file], title: 'My Jungkook photo strip' });
-        setNotice('Your photo strip is ready to save or share ♡');
-        return;
+
+      if (fileHandlePromise) {
+        const fileHandle = await fileHandlePromise;
+        if (fileHandle?.canceled) {
+          setNotice('Save cancelled. Your photo strip is still saved in this browser.');
+          return;
+        }
+        if (fileHandle) {
+          try {
+            const writable = await fileHandle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            setNotice('Photo strip saved to your chosen folder ♡');
+            return;
+          } catch (writeError) {
+            console.error('Unable to save photo strip to the chosen folder.', writeError);
+            setNotice('Could not save to that folder. Downloading the photo strip instead…');
+          }
+        }
+      }
+
+      if (isTouchDevice && navigator.canShare?.({ files: [file] }) && navigator.share) {
+        try {
+          await navigator.share({ files: [file], title: 'My Jungkook photo strip' });
+          setNotice('Choose Save Image or Save to Files in the share menu ♡');
+          return;
+        } catch (shareError) {
+          if (shareError.name === 'AbortError') throw shareError;
+          console.error('Unable to open the mobile share menu.', shareError);
+          setNotice('Share menu unavailable. Downloading your photo strip instead…');
+        }
       }
 
       const url = URL.createObjectURL(blob);
@@ -326,16 +371,18 @@ export default function PhotoBooth() {
       setNotice('Photo strip downloaded to your device ♡');
     } catch (saveError) {
       if (saveError.name === 'AbortError') {
-        setNotice('Save cancelled. Your strip is still saved in this browser.');
+        setNotice('Save or sharing was cancelled. Your photo strip is still saved in this browser.');
         return;
       }
       console.error('Unable to export photo strip.', saveError);
-      setError(`${saveError.message} You can also use “Save as PDF”.`);
+      setError(`${saveError.message} If a photo cannot be exported, replace it with an uploaded image and try again. You can also use “Save as PDF”.`);
+    } finally {
+      setIsExporting(false);
     }
   };
 
   return (
-    <section id="photobooth" className="py-20 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto relative">
+    <section id="photobooth" className="photo-booth-page py-20 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto relative">
       <div className="text-center max-w-2xl mx-auto mb-12">
         <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full glass-pill text-xs font-semibold uppercase tracking-wider text-lavender-dark dark:text-lavender mb-3">
           <Camera size={14} />
@@ -357,9 +404,7 @@ export default function PhotoBooth() {
             <div className="washi-tape" />
 
             {/* 4-Cut Strip Frame */}
-            <div
-              className={`p-4 pb-8 rounded-2xl shadow-polaroid border border-white/40 transition-colors duration-500 ${activeTheme.bg} ${activeTheme.text}`}
-            >
+            <div className={`photo-strip-frame p-4 pb-8 rounded-2xl shadow-polaroid border border-white/60 transition-colors duration-500 ${activeTheme.bg} ${activeTheme.text}`}>
               {/* Top Header */}
               <div className="text-center pb-3">
                 <span className="font-mono text-[10px] tracking-widest uppercase opacity-80">
@@ -430,13 +475,13 @@ export default function PhotoBooth() {
         </div>
 
         {/* Customization Controls on Right */}
-        <div className="lg:col-span-7 bg-white dark:bg-deep-purple-light p-6 sm:p-8 rounded-3xl shadow-polaroid border border-white/80 dark:border-lavender/20 space-y-6">
+        <div className="photo-booth-controls lg:col-span-7 bg-white dark:bg-deep-purple-light p-6 sm:p-8 rounded-3xl shadow-polaroid border border-white/80 dark:border-lavender/20 space-y-6">
           <div>
             <h4 className="font-serif text-lg font-bold text-deep-purple dark:text-cream mb-1">
               Customize Your Strip
             </h4>
             <p className="text-xs text-lavender-dark dark:text-lavender">
-              Pick a frame color, write a caption, or upload your own photo in any frame.               Your strip is saved on this device and will be here when you come back.
+              Pick a frame color, write a caption, or upload your own photo in any frame. Your design is saved in this browser, and you can download a copy to your phone or computer.
             </p>
           </div>
 
@@ -453,7 +498,7 @@ export default function PhotoBooth() {
                   onClick={() => setActiveTheme(theme)}
                   className={`p-2.5 rounded-xl border text-xs font-medium text-center transition-all ${
                     activeTheme.id === theme.id
-                      ? 'border-lavender shadow-dreamy ring-2 ring-lavender/30 scale-102'
+                      ? 'photo-theme-option-active border-lavender shadow-dreamy ring-2 ring-lavender/30 scale-102'
                       : 'border-lavender/20 hover:border-lavender/50'
                   }`}
                 >
@@ -478,6 +523,11 @@ export default function PhotoBooth() {
             />
           </div>
 
+          <div className="photo-save-note">
+            <span><Smartphone size={15} /> On mobile: choose “Save Image” or “Save to Files” in the share menu.</span>
+            <span><Monitor size={15} /> On computer: save the PNG to a folder or use “Save as PDF”.</span>
+          </div>
+
           {/* Action Buttons */}
           <div className="pt-2 flex flex-wrap gap-3">
             <button
@@ -490,10 +540,11 @@ export default function PhotoBooth() {
 
             <button
               onClick={handleSaveImage}
-              className="inline-flex items-center gap-1.5 px-5 py-2 rounded-full bg-lavender text-white text-xs font-bold shadow-dreamy hover:bg-lavender-dark transition-all hover:scale-105"
+              disabled={isExporting}
+              className="photo-save-button inline-flex items-center gap-1.5 px-5 py-2 rounded-full bg-lavender text-white text-xs font-bold shadow-dreamy hover:bg-lavender-dark transition-all hover:scale-105 disabled:cursor-wait disabled:opacity-70"
             >
-              <Download size={13} />
-              <span>Save Image to Device ♡</span>
+              <Download size={13} className={isExporting ? 'animate-bounce' : ''} />
+              <span>{isExporting ? 'Preparing your strip…' : 'Save Photo Strip to Device ♡'}</span>
             </button>
 
             <button

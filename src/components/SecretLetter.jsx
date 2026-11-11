@@ -3,100 +3,84 @@ import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { 
   Heart, 
-  Sparkles, 
   Mail, 
-  Edit3, 
-  Check, 
-  RotateCcw, 
+  Edit3,
+  Check,
+  RotateCcw,
+  X,
   Plus, 
   Trash2, 
-  Image as ImageIcon,
-  Calendar,
   Camera
 } from 'lucide-react';
 
-const DEFAULT_LETTER = {
+const LETTER = {
   greeting: 'For My Favorite Girl ♡',
   message: 'I know how much you love him, so I made this little corner of the internet just for you. I hope every time you visit, it brings a little happiness to your day. You deserve all the happiness in the world. ♡',
-  signOff: 'Forever yours 💜',
+  signOff: 'Forever yours ♡',
   date: 'Always & Forever'
 };
-
-const DEFAULT_COUPLE_MEMORIES = [
-  {
-    id: 'memory-1',
-    title: 'Golden Era Car Singalong',
-    date: 'Our Favorite Day',
-    caption: 'You singing along with the biggest smile on your face.',
-    image: 'https://images.unsplash.com/photo-1518199266791-5375a83190b7?auto=format&fit=crop&w=600&q=80',
-    sticker: '🚗 🎶'
-  },
-  {
-    id: 'memory-2',
-    title: 'Coffee & BTS Marathons',
-    date: 'Sunday Afternoon',
-    caption: 'Curled up together watching Weverse lives and drinking iced sweet lattes.',
-    image: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=600&q=80',
-    sticker: '☕ 💜'
-  },
-  {
-    id: 'memory-3',
-    title: 'That Unforgettable Smile',
-    date: 'Every Single Day',
-    caption: 'The way your eyes light up whenever you get excited about Jungkook.',
-    image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80',
-    sticker: '✨ 🐰'
-  }
-];
 
 export default function SecretLetter() {
   const [isOpen, setIsOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [letterContent, setLetterContent] = useState(DEFAULT_LETTER);
-  const [coupleMemories, setCoupleMemories] = useState(DEFAULT_COUPLE_MEMORIES);
+  const [letterContent, setLetterContent] = useState(LETTER);
+  const [coupleMemories, setCoupleMemories] = useState([]);
   const [showAddMemoryModal, setShowAddMemoryModal] = useState(false);
   const [newMemory, setNewMemory] = useState({ title: '', caption: '', image: '', sticker: '💜' });
+  const [memoryError, setMemoryError] = useState('');
+  const [letterError, setLetterError] = useState('');
 
-  // Load saved letter & memories from localStorage
+  // Load saved message and personal memories, removing only the old sample cards.
   useEffect(() => {
     try {
       const savedLetter = localStorage.getItem('jungkook_secret_letter');
-      if (savedLetter) {
-        setLetterContent(JSON.parse(savedLetter));
-      }
+      if (savedLetter) setLetterContent({ ...LETTER, ...JSON.parse(savedLetter) });
       const savedMemories = localStorage.getItem('jungkook_couple_memories');
       if (savedMemories) {
-        setCoupleMemories(JSON.parse(savedMemories));
+        const memories = JSON.parse(savedMemories);
+        const personalMemories = Array.isArray(memories)
+          ? memories.filter((memory) => !['memory-1', 'memory-2', 'memory-3'].includes(memory.id))
+          : [];
+        setCoupleMemories(personalMemories);
+        if (Array.isArray(memories) && personalMemories.length !== memories.length) {
+          localStorage.setItem('jungkook_couple_memories', JSON.stringify(personalMemories));
+        }
       }
     } catch (e) {
-      console.error('Failed to load personalized letter from localStorage', e);
+      console.error('Failed to load saved surprise content from localStorage', e);
     }
   }, []);
 
-  // Save letter changes
-  const handleSaveLetter = (e) => {
-    e.preventDefault();
+  const saveLetter = (event) => {
+    event.preventDefault();
     try {
       localStorage.setItem('jungkook_secret_letter', JSON.stringify(letterContent));
-    } catch (err) {
-      console.error(err);
+      setIsEditing(false);
+      setLetterError('');
+    } catch (error) {
+      console.error('Unable to save personalized letter.', error);
+      setLetterError('Your letter could not be saved on this device. Please try again.');
     }
-    setIsEditing(false);
-    triggerConfetti();
   };
 
-  const handleResetLetter = () => {
-    setLetterContent(DEFAULT_LETTER);
+  const resetLetter = () => {
+    setLetterContent(LETTER);
+    setIsEditing(false);
+    setLetterError('');
     try {
       localStorage.removeItem('jungkook_secret_letter');
-    } catch (err) {}
-    setIsEditing(false);
+    } catch (error) {
+      console.error('Unable to reset personalized letter.', error);
+    }
   };
 
   // Add new couple memory
   const handleAddMemory = (e) => {
     e.preventDefault();
-    if (!newMemory.title || !newMemory.image) return;
+    if (!newMemory.title || !newMemory.image) {
+      setMemoryError('Please add a title and choose a photo for this memory.');
+      return;
+    }
 
     const memoryToAdd = {
       id: 'memory-' + Date.now(),
@@ -108,11 +92,16 @@ export default function SecretLetter() {
     };
 
     const updated = [memoryToAdd, ...coupleMemories];
-    setCoupleMemories(updated);
     try {
       localStorage.setItem('jungkook_couple_memories', JSON.stringify(updated));
-    } catch (err) {}
+    } catch (error) {
+      console.error('Unable to save couple memory.', error);
+      setMemoryError('This photo could not be saved on your device. Try a smaller image.');
+      return;
+    }
 
+    setCoupleMemories(updated);
+    setMemoryError('');
     setNewMemory({ title: '', caption: '', image: '', sticker: '💜' });
     setShowAddMemoryModal(false);
     triggerConfetti();
@@ -120,10 +109,15 @@ export default function SecretLetter() {
 
   const handleDeleteMemory = (id) => {
     const updated = coupleMemories.filter((m) => m.id !== id);
-    setCoupleMemories(updated);
     try {
       localStorage.setItem('jungkook_couple_memories', JSON.stringify(updated));
-    } catch (err) {}
+    } catch (error) {
+      console.error('Unable to delete couple memory.', error);
+      setMemoryError('This memory could not be removed from this device. Please try again.');
+      return;
+    }
+    setCoupleMemories(updated);
+    setMemoryError('');
   };
 
   // Image file picker helper
@@ -134,6 +128,7 @@ export default function SecretLetter() {
       reader.onloadend = () => {
         setNewMemory((prev) => ({ ...prev, image: reader.result }));
       };
+      reader.onerror = () => setMemoryError('This photo could not be opened. Please choose another image.');
       reader.readAsDataURL(file);
     }
   };
@@ -146,7 +141,7 @@ export default function SecretLetter() {
         particleCount: 60,
         spread: 80,
         origin: { y: 0.6 },
-        colors: ['#B9A0D9', '#F4DCEB', '#9373BE', '#FCD34D', '#FFFFFF'],
+        colors: ['#FFDDE8', '#F8C9DA', '#E8B4C8', '#FFF0F5', '#FFFFFF'],
       });
       setTimeout(() => {
         confetti({
@@ -154,17 +149,19 @@ export default function SecretLetter() {
           angle: 60,
           spread: 60,
           origin: { x: 0.2, y: 0.7 },
-          colors: ['#B9A0D9', '#F4DCEB', '#FFFFFF'],
+          colors: ['#FFDDE8', '#F8C9DA', '#FFFFFF'],
         });
         confetti({
           particleCount: 40,
           angle: 120,
           spread: 60,
           origin: { x: 0.8, y: 0.7 },
-          colors: ['#B9A0D9', '#F4DCEB', '#FFFFFF'],
+          colors: ['#FFDDE8', '#F8C9DA', '#FFFFFF'],
         });
       }, 250);
-    } catch (e) {}
+    } catch (error) {
+      console.error('Unable to play the surprise animation.', error);
+    }
   };
 
   const handleOpenEnvelope = () => {
@@ -173,7 +170,7 @@ export default function SecretLetter() {
   };
 
   return (
-    <section id="surprise" className="py-24 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto relative">
+    <section id="surprise" className="surprise-page py-24 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto relative">
       {/* Decorative floating blur behind envelope */}
       <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-96 h-96 bg-soft-pink/40 dark:bg-lavender/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -207,7 +204,7 @@ export default function SecretLetter() {
             <div className="washi-tape" />
 
             {/* Envelope Exterior */}
-            <div className="relative bg-gradient-to-b from-[#F5ECE1] to-[#EADBC8] dark:from-[#2d2448] dark:to-[#1e1735] p-8 sm:p-12 rounded-3xl shadow-polaroid border-2 border-lavender/40 text-center flex flex-col items-center transition-all duration-500 group-hover:scale-102 group-hover:shadow-dreamy">
+            <div className="surprise-envelope relative p-8 sm:p-12 rounded-3xl shadow-polaroid border-2 border-lavender/40 text-center flex flex-col items-center transition-all duration-500 group-hover:scale-102 group-hover:shadow-dreamy">
               {/* Envelope flap aesthetic triangle */}
               <div className="w-full border-b border-lavender/30 pb-4 mb-6 flex justify-between items-center text-xs font-mono text-lavender-dark dark:text-lavender-light">
                 <span>SPECIAL AIRMAIL ✈</span>
@@ -218,7 +215,7 @@ export default function SecretLetter() {
               <motion.div
                 whileHover={{ scale: 1.15, rotate: 5 }}
                 whileTap={{ scale: 0.95 }}
-                className="w-20 h-20 rounded-full bg-gradient-to-tr from-[#8E2800] via-[#C0392B] to-[#E74C3C] text-amber-200 flex items-center justify-center shadow-lg border-2 border-amber-300/40 relative my-4"
+                className="surprise-seal w-20 h-20 rounded-full text-white flex items-center justify-center shadow-lg border-2 relative my-4"
               >
                 <div className="text-center">
                   <span className="font-serif text-2xl font-bold tracking-wider block">JK</span>
@@ -253,7 +250,7 @@ export default function SecretLetter() {
             {/* Washi Tape */}
             <div className="washi-tape washi-tape-purple" />
 
-            {/* Action Bar for Personalization */}
+            {/* Letter actions */}
             <div className="flex items-center justify-between mb-4 px-2">
               <button
                 onClick={() => setIsOpen(false)}
@@ -261,33 +258,70 @@ export default function SecretLetter() {
               >
                 <span>← Fold envelope back</span>
               </button>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIsEditing(!isEditing)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full glass-pill text-xs font-semibold text-deep-purple dark:text-cream hover:bg-lavender/20 shadow-sm transition-all"
-                >
-                  <Edit3 size={13} />
-                  <span>{isEditing ? "Close Editor" : "Personalize / Edit Letter ✏️"}</span>
-                </button>
-
-                <button
-                  onClick={triggerConfetti}
-                  className="p-1.5 rounded-full glass-pill text-lavender-dark dark:text-lavender hover:scale-110 transition-transform"
-                  title="Throw confetti sparkles"
-                >
-                  <Sparkles size={15} />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditing((editing) => !editing)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full glass-pill text-xs font-semibold text-deep-purple shadow-sm"
+              >
+                {isEditing ? <X size={13} /> : <Edit3 size={13} />}
+                {isEditing ? 'Close editor' : 'Personalize this letter'}
+              </button>
             </div>
 
             {/* Letter Parchment Frame */}
-            <div className="relative bg-gradient-to-b from-[#FFFDF9] via-[#FAF4EB] to-[#FFF9F0] dark:from-[#261f3d] dark:via-[#211a37] dark:to-[#1a142c] p-8 sm:p-12 rounded-3xl shadow-polaroid border border-lavender/40">
+            <div className="letter-paper relative p-8 sm:p-12 rounded-3xl shadow-polaroid border border-lavender/40">
               {/* Subtle vintage lined paper effect */}
-              <div className="absolute inset-0 bg-[radial-gradient(#B9A0D9_1px,transparent_1px)] [background-size:24px_24px] opacity-20 pointer-events-none rounded-3xl" />
+              <div className="absolute inset-0 bg-[radial-gradient(#E8B4C8_1px,transparent_1px)] [background-size:24px_24px] opacity-20 pointer-events-none rounded-3xl" />
 
-              {!isEditing ? (
-                /* Display Mode */
+              {isEditing ? (
+                <form onSubmit={saveLetter} className="relative z-10 space-y-4">
+                  <h3 className="font-serif text-xl font-bold text-deep-purple">Make this note yours ♡</h3>
+                  {letterError && <p className="surprise-error" role="alert">{letterError}</p>}
+                  <label className="block text-xs font-semibold text-deep-purple">
+                    Greeting
+                    <input
+                      value={letterContent.greeting}
+                      onChange={(event) => setLetterContent({ ...letterContent, greeting: event.target.value })}
+                      className="mt-1 w-full rounded-xl border border-lavender/40 bg-white/80 px-3 py-2 font-handwriting text-xl"
+                      required
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold text-deep-purple">
+                    Your message
+                    <textarea
+                      rows={5}
+                      value={letterContent.message}
+                      onChange={(event) => setLetterContent({ ...letterContent, message: event.target.value })}
+                      className="mt-1 w-full rounded-xl border border-lavender/40 bg-white/80 px-3 py-2 font-handwriting text-xl"
+                      required
+                    />
+                  </label>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block text-xs font-semibold text-deep-purple">
+                      Sign-off
+                      <input
+                        value={letterContent.signOff}
+                        onChange={(event) => setLetterContent({ ...letterContent, signOff: event.target.value })}
+                        className="mt-1 w-full rounded-xl border border-lavender/40 bg-white/80 px-3 py-2 font-handwriting text-xl"
+                      />
+                    </label>
+                    <label className="block text-xs font-semibold text-deep-purple">
+                      Small note
+                      <input
+                        value={letterContent.date}
+                        onChange={(event) => setLetterContent({ ...letterContent, date: event.target.value })}
+                        className="mt-1 w-full rounded-xl border border-lavender/40 bg-white/80 px-3 py-2 font-handwriting text-xl"
+                      />
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap justify-between gap-2 pt-2">
+                    <button type="button" onClick={resetLetter} className="arcade-text-button">
+                      <RotateCcw size={13} /> Reset message
+                    </button>
+                    <button type="submit" className="button-primary"><Check size={14} /> Save my letter ♡</button>
+                  </div>
+                </form>
+              ) : (
                 <div className="relative z-10 space-y-6">
                   {/* Letter Header */}
                   <div className="border-b border-lavender/20 pb-4 flex items-center justify-between">
@@ -319,94 +353,8 @@ export default function SecretLetter() {
                       </p>
                     </div>
                   </div>
-                </div>
-              ) : (
-                /* Editable Form Mode */
-                <form onSubmit={handleSaveLetter} className="relative z-10 space-y-4">
-                  <div className="flex items-center justify-between border-b border-lavender/20 pb-2">
-                    <span className="text-xs font-bold uppercase tracking-wider font-mono text-lavender-dark dark:text-lavender">
-                      Personalize Your Secret Letter
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleResetLetter}
-                      className="text-xs text-rose-500 hover:underline flex items-center gap-1"
-                    >
-                      <RotateCcw size={12} />
-                      Reset to Default
-                    </button>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold mb-1 text-deep-purple dark:text-cream">
-                      Greeting (e.g. For My Favorite Girl ♡):
-                    </label>
-                    <input
-                      type="text"
-                      value={letterContent.greeting}
-                      onChange={(e) => setLetterContent({ ...letterContent, greeting: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl border border-lavender/40 bg-white/80 dark:bg-black/40 text-deep-purple dark:text-cream font-handwriting text-xl focus:outline-none focus:ring-2 focus:ring-lavender"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold mb-1 text-deep-purple dark:text-cream">
-                      Letter Body:
-                    </label>
-                    <textarea
-                      rows={5}
-                      value={letterContent.message}
-                      onChange={(e) => setLetterContent({ ...letterContent, message: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl border border-lavender/40 bg-white/80 dark:bg-black/40 text-deep-purple dark:text-cream font-handwriting text-xl focus:outline-none focus:ring-2 focus:ring-lavender leading-relaxed"
-                      required
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold mb-1 text-deep-purple dark:text-cream">
-                        Sign-off:
-                      </label>
-                      <input
-                        type="text"
-                        value={letterContent.signOff}
-                        onChange={(e) => setLetterContent({ ...letterContent, signOff: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl border border-lavender/40 bg-white/80 dark:bg-black/40 text-deep-purple dark:text-cream font-handwriting text-xl focus:outline-none focus:ring-2 focus:ring-lavender"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold mb-1 text-deep-purple dark:text-cream">
-                        Date / Header Note:
-                      </label>
-                      <input
-                        type="text"
-                        value={letterContent.date}
-                        onChange={(e) => setLetterContent({ ...letterContent, date: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl border border-lavender/40 bg-white/80 dark:bg-black/40 text-deep-purple dark:text-cream font-handwriting text-xl focus:outline-none focus:ring-2 focus:ring-lavender"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="pt-3 flex justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setIsEditing(false)}
-                      className="px-4 py-2 rounded-full text-xs font-medium glass-pill text-deep-purple dark:text-cream"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-5 py-2 rounded-full text-xs font-bold bg-lavender text-white shadow-dreamy hover:bg-lavender-dark transition-colors flex items-center gap-1.5"
-                    >
-                      <Check size={14} />
-                      Save My Letter ♡
-                    </button>
-                  </div>
-                </form>
-              )}
+              </div>
+                )}
             </div>
           </motion.div>
         )}
@@ -434,8 +382,16 @@ export default function SecretLetter() {
             <span>Add Our Memory 📸</span>
           </button>
         </div>
+        {memoryError && <p className="surprise-error" role="alert">{memoryError}</p>}
 
         {/* Couple Polaroids Scrapbook Grid */}
+        {coupleMemories.length === 0 ? (
+          <div className="empty-memory-note">
+            <span>୨୧</span>
+            <p>Your little memory book is waiting for its first page.</p>
+            <small>Add a photo that makes you both smile ♡</small>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
           {coupleMemories.map((mem, idx) => (
             <motion.div
@@ -476,20 +432,18 @@ export default function SecretLetter() {
                   </p>
                 </div>
 
-                {/* Delete button (only show on hover if more than 1 item) */}
-                {coupleMemories.length > 1 && (
-                  <button
-                    onClick={() => handleDeleteMemory(mem.id)}
-                    className="absolute top-4 right-4 p-1.5 rounded-full bg-black/40 hover:bg-rose-500 text-white opacity-0 group-hover:opacity-100 transition-opacity text-xs"
-                    title="Delete this memory"
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                )}
+                <button
+                  onClick={() => handleDeleteMemory(mem.id)}
+                  className="absolute top-4 right-4 p-1.5 rounded-full bg-black/40 hover:bg-rose-500 text-white opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                  title="Delete this memory"
+                >
+                  <Trash2 size={12} />
+                </button>
               </div>
             </motion.div>
           ))}
         </div>
+        )}
       </div>
 
       {/* Modal: Add Custom Couple Memory */}
@@ -506,6 +460,7 @@ export default function SecretLetter() {
             <p className="text-xs text-lavender-dark dark:text-lavender mb-4">
               Add a picture of the two of you to cherish on this page forever.
             </p>
+            {memoryError && <p className="surprise-error mb-4" role="alert">{memoryError}</p>}
 
             <form onSubmit={handleAddMemory} className="space-y-4">
               <div>
