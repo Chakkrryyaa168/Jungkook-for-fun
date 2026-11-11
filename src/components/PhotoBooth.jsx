@@ -4,6 +4,8 @@ import { Camera, Download, ImagePlus, RefreshCw, Palette } from 'lucide-react';
 import { photos, FALLBACK_IMAGE } from '../data/photos';
 
 const STORAGE_KEY = 'jungkook_photo_booth';
+const DATABASE_NAME = 'jungkook-scrapbook';
+const DATABASE_STORE = 'photo-booth';
 
 const STRIP_THEMES = [
   { id: 'lavender', name: 'Lavender Dream', bg: 'bg-[#B9A0D9]', text: 'text-[#211B38]' },
@@ -28,6 +30,61 @@ function getSavedPhotoBooth() {
     console.error('Unable to load saved photo strip.', error);
     return null;
   }
+}
+
+function openPhotoBoothDatabase() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error('Device storage is unavailable.'));
+      return;
+    }
+
+    const request = window.indexedDB.open(DATABASE_NAME, 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(DATABASE_STORE)) {
+        request.result.createObjectStore(DATABASE_STORE);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('Could not open device storage.'));
+  });
+}
+
+async function readSavedPhotoBooth() {
+  const database = await openPhotoBoothDatabase();
+  return new Promise((resolve, reject) => {
+    const request = database.transaction(DATABASE_STORE, 'readonly')
+      .objectStore(DATABASE_STORE)
+      .get(STORAGE_KEY);
+    request.onsuccess = () => {
+      database.close();
+      resolve(request.result || null);
+    };
+    request.onerror = () => {
+      database.close();
+      reject(request.error || new Error('Could not read the saved photo strip.'));
+    };
+  });
+}
+
+async function writeSavedPhotoBooth(settings) {
+  const database = await openPhotoBoothDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(DATABASE_STORE, 'readwrite');
+    transaction.objectStore(DATABASE_STORE).put(settings, STORAGE_KEY);
+    transaction.oncomplete = () => {
+      database.close();
+      resolve();
+    };
+    transaction.onerror = () => {
+      database.close();
+      reject(transaction.error || new Error('Could not save the photo strip.'));
+    };
+    transaction.onabort = () => {
+      database.close();
+      reject(transaction.error || new Error('Saving the photo strip was interrupted.'));
+    };
+  });
 }
 
 function resizeImage(file) {
@@ -62,6 +119,83 @@ function resizeImage(file) {
   });
 }
 
+function loadImageForExport(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    if (!url.startsWith('data:')) image.crossOrigin = 'anonymous';
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('A photo could not be loaded for saving. Try uploading your own photo into that frame.'));
+    image.src = url;
+  });
+}
+
+async function createStripImage(selectedPhotos, themeId, caption) {
+  const images = await Promise.all(selectedPhotos.map((photo) => loadImageForExport(photo.url)));
+  const width = 900;
+  const padding = 48;
+  const photoWidth = width - padding * 2;
+  const photoHeight = Math.round(photoWidth * 3 / 4);
+  const headerHeight = 85;
+  const gap = 22;
+  const footerHeight = 190;
+  const height = padding * 2 + headerHeight + photoHeight * images.length + gap * (images.length - 1) + footerHeight;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Your browser could not create the photo strip image.');
+
+  const background = {
+    lavender: '#B9A0D9',
+    'deep-purple': '#211B38',
+    'soft-pink': '#F4DCEB',
+    'classic-white': '#FFFFFF',
+  }[themeId] || '#B9A0D9';
+  const textColor = themeId === 'deep-purple' ? '#FFF8F0' : '#211B38';
+  context.fillStyle = background;
+  context.fillRect(0, 0, width, height);
+  context.fillStyle = textColor;
+  context.textAlign = 'center';
+  context.font = '600 23px Georgia, serif';
+  context.fillText('★  JUNGKOOK PHOTO STUDIO  ★', width / 2, padding + 34);
+
+  let y = padding + headerHeight;
+  images.forEach((image) => {
+    const imageRatio = image.naturalWidth / image.naturalHeight;
+    const frameRatio = photoWidth / photoHeight;
+    let sourceX = 0;
+    let sourceY = 0;
+    let sourceWidth = image.naturalWidth;
+    let sourceHeight = image.naturalHeight;
+    if (imageRatio > frameRatio) {
+      sourceWidth = image.naturalHeight * frameRatio;
+      sourceX = (image.naturalWidth - sourceWidth) / 2;
+    } else {
+      sourceHeight = image.naturalWidth / frameRatio;
+      sourceY = (image.naturalHeight - sourceHeight) / 2;
+    }
+    context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, padding, y, photoWidth, photoHeight);
+    y += photoHeight + gap;
+  });
+
+  y += 14;
+  context.fillStyle = textColor;
+  context.globalAlpha = 0.9;
+  context.font = 'italic 36px cursive';
+  context.fillText(caption || 'jungkook.zip ♡', width / 2, y + 34, width - padding * 2);
+  context.globalAlpha = 0.68;
+  context.font = '18px Georgia, serif';
+  context.fillText('970901  •  FOR MY GIRL  •  ♡', width / 2, y + 76);
+  context.globalAlpha = 1;
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('Your browser could not finish the photo strip image.'));
+    }, 'image/png');
+  });
+}
+
 export default function PhotoBooth() {
   const [savedSettings] = useState(getSavedPhotoBooth);
   const [selectedPhotos, setSelectedPhotos] = useState(
@@ -71,20 +205,55 @@ export default function PhotoBooth() {
   const [customText, setCustomText] = useState(savedSettings?.customText || 'jungkook.zip ♡ 2026');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [storageReady, setStorageReady] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+    readSavedPhotoBooth()
+      .then((saved) => {
+        if (!isMounted || !saved) return;
+        const theme = STRIP_THEMES.find((item) => item.id === saved.activeTheme);
+        if (Array.isArray(saved.selectedPhotos) && saved.selectedPhotos.length === 4) {
+          setSelectedPhotos(saved.selectedPhotos);
+        }
+        if (theme) setActiveTheme(theme);
+        if (typeof saved.customText === 'string') setCustomText(saved.customText);
+      })
+      .catch((storageError) => {
+        console.error('Unable to load photo strip from device storage.', storageError);
+      })
+      .finally(() => {
+        if (isMounted) setStorageReady(true);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    const settings = { selectedPhotos, activeTheme: activeTheme.id, customText };
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        selectedPhotos,
-        activeTheme: activeTheme.id,
-        customText,
-      }));
-      setError('');
+      writeSavedPhotoBooth(settings)
+        .then(() => {
+          setError('');
+        })
+        .catch((storageError) => {
+          console.error('Unable to save photo strip to device storage.', storageError);
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+            setError('');
+          } catch (fallbackError) {
+            console.error('Unable to save photo strip in browser storage.', fallbackError);
+            setError('Could not save on this device. Try a smaller photo or free up browser storage.');
+          }
+        });
     } catch (storageError) {
-      console.error('Unable to save photo strip on this device.', storageError);
-      setError('This browser could not save the strip. Try a smaller image or free up browser storage.');
+      console.error('Unable to save photo strip.', storageError);
+      setError('Could not save on this device. Please try again.');
     }
-  }, [selectedPhotos, activeTheme, customText]);
+  }, [selectedPhotos, activeTheme, customText, storageReady]);
 
   const shufflePhotos = () => {
     const shuffled = [...photos].sort(() => 0.5 - Math.random()).slice(0, 4);
@@ -129,8 +298,40 @@ export default function PhotoBooth() {
   };
 
   const handlePrint = () => {
-    setNotice('Choose “Save as PDF” in the print window to keep your photo strip.');
+    setNotice('Choose “Save as PDF” in the print window to keep your strip.');
     window.print();
+  };
+
+  const handleSaveImage = async () => {
+    setNotice('Preparing your photo strip…');
+    setError('');
+    try {
+      const blob = await createStripImage(selectedPhotos, activeTheme.id, customText);
+      const file = new File([blob], 'jungkook-photo-strip.png', { type: 'image/png' });
+      if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+        await navigator.share({ files: [file], title: 'My Jungkook photo strip' });
+        setNotice('Your photo strip is ready to save or share ♡');
+        return;
+      }
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'jungkook-photo-strip.png';
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setNotice('Photo strip downloaded to your device ♡');
+    } catch (saveError) {
+      if (saveError.name === 'AbortError') {
+        setNotice('Save cancelled. Your strip is still saved in this browser.');
+        return;
+      }
+      console.error('Unable to export photo strip.', saveError);
+      setError(`${saveError.message} You can also use “Save as PDF”.`);
+    }
   };
 
   return (
@@ -144,7 +345,7 @@ export default function PhotoBooth() {
           Make Your 4-Cut JK Photo Strip ♡
         </h3>
         <p className="text-xs sm:text-sm text-deep-purple/75 dark:text-cream/80 font-normal leading-relaxed">
-          Upload your own photos into the frames, choose a color and caption, then print or save your strip. Your choices stay saved on this device.
+          Upload your own photos into the frames, choose a color and caption, then save the finished strip to your device. Your choices stay saved on this device too.
         </p>
       </div>
 
@@ -235,7 +436,7 @@ export default function PhotoBooth() {
               Customize Your Strip
             </h4>
             <p className="text-xs text-lavender-dark dark:text-lavender">
-              Pick a frame color, write a caption, or upload your own photo in any frame. Your strip is saved automatically in this browser.
+              Pick a frame color, write a caption, or upload your own photo in any frame.               Your strip is saved on this device and will be here when you come back.
             </p>
           </div>
 
@@ -288,11 +489,18 @@ export default function PhotoBooth() {
             </button>
 
             <button
-              onClick={handlePrint}
+              onClick={handleSaveImage}
               className="inline-flex items-center gap-1.5 px-5 py-2 rounded-full bg-lavender text-white text-xs font-bold shadow-dreamy hover:bg-lavender-dark transition-all hover:scale-105"
             >
               <Download size={13} />
-              <span>Print / Save Strip 🖨️</span>
+              <span>Save Image to Device ♡</span>
+            </button>
+
+            <button
+              onClick={handlePrint}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full glass-pill text-xs font-semibold text-deep-purple dark:text-cream hover:bg-lavender/20 shadow-sm transition-all"
+            >
+              <span>Save as PDF</span>
             </button>
           </div>
           {(notice || error) && (
